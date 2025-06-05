@@ -22,4 +22,4 @@ jobs:
               target_url: prNumber
                 ? `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
                 : ''
-            })a
+            })
