@@ -5,6 +5,8 @@ on:
 
 jobs:
   status:
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Set status check
