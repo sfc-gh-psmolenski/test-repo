@@ -25,3 +25,13 @@ jobs:
                 ? `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
                 : ''
             })
+      - name: Add reviewer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              reviewers: ['reviewer-username'] // You can make this dynamic
+            })
