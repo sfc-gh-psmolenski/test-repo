@@ -33,5 +33,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
-              reviewers: ['reviewer-username'] // You can make this dynamic
+              reviewers: ['sfc-gh-mwalas'] // You can make this dynamic
             })
