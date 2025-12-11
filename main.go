@@ -6,16 +6,30 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
+// Note: In Go 1.24+, FIPS mode is controlled by GODEBUG=fips140=on
+// The crypto/tls/fipsonly package is optional and only needed for
+// strictest enforcement. For most use cases, GODEBUG=fips140=only
+// provides equivalent strict FIPS 140-3 compliance.
+
 func main() {
 	// Check if FIPS mode is enabled
-	if isFIPSEnabled() {
-		fmt.Println("✓ FIPS mode is ENABLED")
-	} else {
+	godebug := os.Getenv("GODEBUG")
+	fipsMode := getFIPSMode(godebug)
+
+	switch fipsMode {
+	case "only":
+		fmt.Println("✓ FIPS mode is ENABLED (strict mode: fips140=only)")
+	case "on":
+		fmt.Println("✓ FIPS mode is ENABLED (standard mode: fips140=on)")
+		fmt.Println("  Note: Go 1.25 FIPS mode enforces Extended Master Secret for TLS 1.2")
+	default:
 		fmt.Println("⚠ WARNING: FIPS mode is NOT enabled")
-		fmt.Println("  To enable FIPS mode, build with: GOEXPERIMENT=boringcrypto go build")
+		fmt.Println("  To enable FIPS mode:")
+		fmt.Println("    - GODEBUG=fips140=on ./fips-client")
 	}
 
 	// Create a custom HTTP client with TLS configuration
@@ -46,14 +60,15 @@ func main() {
 
 		// Check if this is the expected FIPS 140-3 Extended Master Secret error
 		if contains(err.Error(), "FIPS 140-3 requires the use of Extended Master Secret") {
-			fmt.Println("\n📋 NOTE: This error is EXPECTED when using strict FIPS 140-3 mode.")
+			fmt.Println("\n📋 NOTE: This error is EXPECTED and CORRECT in FIPS 140-3 mode.")
 			fmt.Println("It means:")
 			fmt.Println("  ✓ FIPS enforcement is working correctly")
 			fmt.Println("  ✓ The server doesn't support Extended Master Secret (EMS)")
 			fmt.Println("  ✓ The connection was properly rejected per FIPS 140-3 requirements")
-			fmt.Println("\nTo connect to this server, you would need to either:")
-			fmt.Println("  1. Use a server that supports EMS (recommended)")
-			fmt.Println("  2. Comment out 'crypto/tls/fipsonly' in boring.go for compatible FIPS mode")
+			fmt.Println("\nFIPS 140-3 compliance requires EMS for TLS 1.2 connections.")
+			fmt.Println("To connect to this server:")
+			fmt.Println("  1. Server must implement EMS support (RFC 7627)")
+			fmt.Println("  2. Or run without FIPS mode (not recommended for FIPS-required environments)")
 		}
 		log.Fatal("")
 	}
@@ -84,11 +99,16 @@ func main() {
 	fmt.Printf("%s\n", string(body))
 }
 
-// isFIPSEnabled checks if the Go runtime was built with FIPS mode
-func isFIPSEnabled() bool {
-	// Check if built with BoringCrypto support
-	// This is determined at build time via build tags
-	return checkBoringCrypto()
+// getFIPSMode checks the FIPS mode setting from GODEBUG
+// Returns "on", "only", or empty string if disabled
+func getFIPSMode(godebug string) string {
+	if strings.Contains(godebug, "fips140=only") {
+		return "only"
+	}
+	if strings.Contains(godebug, "fips140=on") {
+		return "on"
+	}
+	return ""
 }
 
 // getTLSVersion converts TLS version constant to string
@@ -147,3 +167,9 @@ func getCipherSuite(suite uint16) string {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+// Note: In Go 1.24+, FIPS mode uses the native Go Cryptographic Module
+// GODEBUG options:
+//   - fips140=on: Enables FIPS mode with broader compatibility
+//   - fips140=only: Strict FIPS 140-3 enforcement (requires EMS for TLS 1.2)
+// No need for BoringCrypto or GOEXPERIMENT=boringcrypto

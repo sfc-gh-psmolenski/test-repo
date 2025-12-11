@@ -1,17 +1,27 @@
 # Go FIPS Mode HTTPS Client
 
-This is a simple Go program that sends HTTPS GET requests with FIPS mode enabled.
+This is a simple Go program that sends HTTPS GET requests with FIPS 140-3 mode enabled using Go's native FIPS support.
 
 ## What is FIPS Mode?
 
-FIPS (Federal Information Processing Standards) 140-2 is a U.S. government security standard that specifies requirements for cryptographic modules. When FIPS mode is enabled, only FIPS-approved cryptographic algorithms and cipher suites are used.
+FIPS (Federal Information Processing Standards) 140-3 is a U.S. government security standard that specifies requirements for cryptographic modules. When FIPS mode is enabled, only FIPS-approved cryptographic algorithms and cipher suites are used.
+
+## Go 1.24+ Native FIPS Support
+
+Starting with Go 1.24, Go includes a **native FIPS 140-3 compliant cryptographic module** built directly into the standard library. This eliminates the need for BoringCrypto or external dependencies.
+
+The Go Cryptographic Module v1.0.0 is currently undergoing NIST FIPS 140-3 validation and is listed in the CMVP Modules In Process List.
+
+**References:**
+- [Go Blog: FIPS 140-3](https://go.dev/blog/fips140)
+- [Go Security: FIPS 140](https://tip.golang.org/doc/security/fips140)
 
 ## Requirements
 
-- Go 1.25 or later
-- GOEXPERIMENT=boringcrypto flag for FIPS mode
+- Go 1.25 (or Go 1.24+)
+- `GODEBUG=fips140=on` environment variable to enable FIPS mode
 
-## Building with FIPS Mode
+## Building the Program
 
 ### Option 1: Using the build script (Recommended)
 
@@ -19,38 +29,51 @@ FIPS (Federal Information Processing Standards) 140-2 is a U.S. government secur
 ./build-fips.sh
 ```
 
-### Option 2: Manual build with GOEXPERIMENT
-
-```bash
-GOEXPERIMENT=boringcrypto go build -o fips-client
-```
-
-### Option 3: Regular build (without FIPS)
+### Option 2: Manual build
 
 ```bash
 go build -o fips-client
 ```
 
-Note: When built without FIPS mode, the program will display a warning but will still function using standard Go crypto libraries.
+**Note:** With Go 1.24+, FIPS mode is enabled at **runtime** via the `GODEBUG` environment variable, not at build time.
 
 ## Running the Program
+
+### With FIPS mode enabled:
+
+```bash
+GODEBUG=fips140=on ./fips-client
+```
+
+Or set it permanently in your shell:
+
+```bash
+export GODEBUG=fips140=on
+./fips-client
+```
+
+### Without FIPS mode (standard Go crypto):
 
 ```bash
 ./fips-client
 ```
 
 The program will:
-1. Check if FIPS mode is enabled
+1. Check if FIPS mode is enabled (via GODEBUG environment variable)
 2. Send a GET request to https://dibaddoo.snowflakecomputing.com/
 3. Display TLS connection details including cipher suite used
 4. Show the response from the server
 
 ## Verification
 
-When running with FIPS mode enabled, you should see:
-- "✓ FIPS mode is ENABLED" message
+When running with `GODEBUG=fips140=on`, you should see:
+- "✓ FIPS mode is ENABLED (Go native FIPS 140-3)" message
 - TLS 1.2 or 1.3 connection
 - FIPS-approved cipher suites (e.g., TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+
+When running without the GODEBUG flag, you'll see:
+- "⚠ WARNING: FIPS mode is NOT enabled" message
+- Standard Go crypto libraries will be used
 
 ## FIPS-Approved Cipher Suites
 
@@ -66,9 +89,9 @@ In FIPS mode, only the following cipher suites are allowed:
 
 ### FIPS mode is NOT enabled
 
-If you see the warning message, it means the program was built without BoringCrypto. Try rebuilding with:
+If you see the warning message, it means the `GODEBUG=fips140=on` environment variable is not set. Enable it with:
 ```bash
-GOEXPERIMENT=boringcrypto go build
+GODEBUG=fips140=on ./fips-client
 ```
 
 ### Connection Errors
@@ -80,75 +103,98 @@ If you encounter connection errors, check:
 
 ## Notes
 
-- BoringCrypto is Google's FIPS 140-2 validated fork of OpenSSL
+- Go 1.24+ includes native FIPS 140-3 support (no BoringCrypto needed)
+- FIPS mode is enabled at runtime via `GODEBUG=fips140=on` environment variable
 - FIPS mode restricts the use of non-approved cryptographic algorithms
 - Some cipher suites (like ChaCha20-Poly1305) are not FIPS-approved and won't be used in FIPS mode
-- The program uses **strict FIPS 140-3 mode** with `crypto/tls/fipsonly` import
+- The program imports `crypto/tls/fipsonly` which enforces **strict FIPS 140-3 mode**
 - FIPS 140-3 **requires Extended Master Secret (EMS)** for TLS 1.2 connections
 - If a server doesn't support EMS, you'll get: `"tls: FIPS 140-3 requires the use of Extended Master Secret"` - **this is the correct behavior** and shows FIPS enforcement is working
 
-## FIPS Modes
+## FIPS Mode Behavior in Go 1.25
 
-### Strict FIPS 140-3 Mode (Current Configuration)
-
-The program is configured with `crypto/tls/fipsonly` import, which enforces the strictest FIPS 140-3 requirements:
+Go 1.25's native FIPS 140-3 implementation enforces **strict compliance** by default:
 - ✓ Only FIPS-approved cipher suites
-- ✓ Requires Extended Master Secret for TLS 1.2
-- ✓ Will reject non-compliant servers (expected behavior)
+- ✓ **Requires Extended Master Secret (EMS)** for TLS 1.2 connections
+- ✓ Will reject non-compliant servers (expected behavior per FIPS 140-3)
 
-### Compatible FIPS Mode (Optional)
+This means that when you run with `GODEBUG=fips140=on`, connections to servers that don't support EMS (like some Snowflake instances) will fail with:
+```
+tls: FIPS 140-3 requires the use of Extended Master Secret
+```
 
-To allow connections to servers without EMS support while still using FIPS-validated crypto:
-1. Comment out `import _ "crypto/tls/fipsonly"` in `boring.go`
-2. Rebuild with `./build-fips.sh`
+**This is correct behavior and demonstrates that FIPS enforcement is working properly.**
 
-Note: This still uses BoringCrypto and FIPS-approved algorithms, but doesn't enforce EMS requirement.
+### GODEBUG Options
+
+- `GODEBUG=fips140=on` - Enables FIPS mode with strict EMS enforcement
+- Standard Go crypto (no GODEBUG flag) - No FIPS enforcement
 
 ## Implementation Details
 
 ### FIPS Mode Detection
 
-The program uses Go build tags to detect if it was compiled with BoringCrypto:
-- `boring.go`: Compiled only when `boringcrypto` build tag is present
-- `noboring.go`: Compiled when `boringcrypto` build tag is absent
+The program checks the `GODEBUG` environment variable for `fips140=on`:
+
+```go
+func isFIPSEnabled() bool {
+    godebug := os.Getenv("GODEBUG")
+    return strings.Contains(godebug, "fips140=on")
+}
+```
 
 ### TLS Configuration
 
 - Minimum TLS version: 1.2 (required by FIPS)
-- Only FIPS-approved cipher suites are used when built with BoringCrypto
+- Only FIPS-approved cipher suites are used when FIPS mode is enabled
 - Example FIPS-approved cipher: `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
+- The `crypto/tls/fipsonly` import enforces strict compliance
 
 ## Output Examples
 
-### When running with strict FIPS 140-3 mode:
+### When running with FIPS 140-3 mode enabled:
 
 With a server that doesn't support Extended Master Secret (like Snowflake):
 
+```bash
+GODEBUG=fips140=on ./fips-client
 ```
-✓ FIPS mode is ENABLED
+
+Output:
+```
+✓ FIPS mode is ENABLED (standard mode: fips140=on)
+  Note: Go 1.25 FIPS mode enforces Extended Master Secret for TLS 1.2
 
 Sending GET request to: https://dibaddoo.snowflakecomputing.com/
 Error making GET request: Get "https://dibaddoo.snowflakecomputing.com/": tls: FIPS 140-3 requires the use of Extended Master Secret
 
-📋 NOTE: This error is EXPECTED when using strict FIPS 140-3 mode.
+📋 NOTE: This error is EXPECTED and CORRECT in FIPS 140-3 mode.
 It means:
   ✓ FIPS enforcement is working correctly
   ✓ The server doesn't support Extended Master Secret (EMS)
   ✓ The connection was properly rejected per FIPS 140-3 requirements
 
-To connect to this server, you would need to either:
-  1. Use a server that supports EMS (recommended)
-  2. Comment out 'crypto/tls/fipsonly' in boring.go for compatible FIPS mode
+FIPS 140-3 compliance requires EMS for TLS 1.2 connections.
+To connect to this server:
+  1. Server must implement EMS support (RFC 7627)
+  2. Or run without FIPS mode (not recommended for FIPS-required environments)
 ```
 
-**This error is EXPECTED and CORRECT** - it demonstrates that FIPS 140-3 enforcement is working properly. The program now clearly explains what the error means and why it occurs.
+**This error is EXPECTED and CORRECT** - it demonstrates that FIPS 140-3 enforcement is working properly.
 
-### When running with compatible FIPS mode:
+### When running without FIPS mode:
 
-After commenting out `crypto/tls/fipsonly` in `boring.go`:
+Standard Go crypto (no FIPS enforcement):
 
+```bash
+./fips-client
 ```
-✓ FIPS mode is ENABLED
+
+Output:
+```
+⚠ WARNING: FIPS mode is NOT enabled
+  To enable FIPS mode:
+    - GODEBUG=fips140=on ./fips-client
 
 Sending GET request to: https://dibaddoo.snowflakecomputing.com/
 
@@ -167,5 +213,5 @@ Negotiated Protocol:
 <html><head><title>Cookie support required</title>...
 ```
 
-This still uses FIPS-validated BoringCrypto but allows connections to servers without EMS.
+This uses standard Go cryptography without FIPS enforcement, allowing connections to any server.
 
