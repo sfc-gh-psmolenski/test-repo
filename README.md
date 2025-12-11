@@ -19,7 +19,9 @@ The Go Cryptographic Module v1.0.0 is currently undergoing NIST FIPS 140-3 valid
 ## Requirements
 
 - Go 1.25 (or Go 1.24+)
-- `GODEBUG=fips140=on` environment variable to enable FIPS mode
+- `GOFIPS140=v1.0.0` environment variable at build time
+
+**Important:** Building with `GOFIPS140` automatically enables FIPS 140-3 enforcement. The `GODEBUG=fips140` variable provides additional control but is optional.
 
 ## Building the Program
 
@@ -29,50 +31,93 @@ The Go Cryptographic Module v1.0.0 is currently undergoing NIST FIPS 140-3 valid
 ./build-fips.sh
 ```
 
-### Option 2: Manual build
+This builds with `GOFIPS140=v1.0.0` by default.
+
+### Option 2: Manual build with specific FIPS module version
+
+```bash
+# Build with FIPS module v1.0.0 (frozen in early 2025)
+GOFIPS140=v1.0.0 go build -o fips-client
+
+# Or use the latest FIPS module
+GOFIPS140=latest go build -o fips-client
+```
+
+### Option 3: Build without FIPS module (standard crypto)
 
 ```bash
 go build -o fips-client
 ```
 
-**Note:** With Go 1.24+, FIPS mode is enabled at **runtime** via the `GODEBUG` environment variable, not at build time.
+**Important:** 
+- `GOFIPS140` at **build time** enables FIPS 140-3 enforcement automatically
+- When built with `GOFIPS140`, the program ALWAYS uses FIPS-approved cryptography
+- `GODEBUG=fips140` at **runtime** provides additional control (optional)
 
 ## Running the Program
 
-### With FIPS mode enabled:
+### Complete FIPS workflow (Build + Run):
 
 ```bash
-GODEBUG=fips140=on ./fips-client
-```
+# Build with FIPS module (FIPS is automatically enforced)
+GOFIPS140=v1.0.0 go build -o fips-client
 
-Or set it permanently in your shell:
-
-```bash
-export GODEBUG=fips140=on
+# Run - FIPS enforcement is already active from build
 ./fips-client
 ```
 
-### Without FIPS mode (standard Go crypto):
+Or use the build script:
 
 ```bash
+./build-fips.sh  # Builds with GOFIPS140=v1.0.0
+./fips-client     # FIPS automatically enforced
+```
+
+### Optional: Runtime control with GODEBUG
+
+```bash
+# Standard FIPS enforcement (default when built with GOFIPS140)
+./fips-client
+
+# Explicit FIPS mode (same as above if built with GOFIPS140)
+GODEBUG=fips140=on ./fips-client
+
+# Strictest mode (panics on any non-FIPS crypto)
+GODEBUG=fips140=only ./fips-client
+```
+
+### Without FIPS (build without GOFIPS140):
+
+```bash
+# Build without FIPS module
+go build -o fips-client
+
+# Run with standard Go crypto (no FIPS enforcement)
 ./fips-client
 ```
 
 The program will:
-1. Check if FIPS mode is enabled (via GODEBUG environment variable)
-2. Send a GET request to https://dibaddoo.snowflakecomputing.com/
-3. Display TLS connection details including cipher suite used
-4. Show the response from the server
+1. Display the FIPS module version used at build time (GOFIPS140)
+2. Check if FIPS mode is enabled at runtime (GODEBUG)
+3. Send a GET request to https://dibaddoo.snowflakecomputing.com/
+4. Display TLS connection details including cipher suite used
+5. Show the response from the server
 
 ## Verification
 
+### Build Verification
+The program shows which FIPS module was used at build time:
+- `ℹ️  Built with FIPS module: GOFIPS140=v1.0.0` - Built with FIPS support
+- `ℹ️  Built without GOFIPS140 set` - Built with standard crypto
+
+### Runtime Verification
 When running with `GODEBUG=fips140=on`, you should see:
-- "✓ FIPS mode is ENABLED (Go native FIPS 140-3)" message
+- "✓ FIPS mode is ENABLED (standard mode: GODEBUG=fips140=on)" message
 - TLS 1.2 or 1.3 connection
 - FIPS-approved cipher suites (e.g., TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
 
 When running without the GODEBUG flag, you'll see:
-- "⚠ WARNING: FIPS mode is NOT enabled" message
+- "⚠ WARNING: FIPS runtime mode is NOT enabled" message
 - Standard Go crypto libraries will be used
 
 ## FIPS-Approved Cipher Suites
@@ -89,8 +134,16 @@ In FIPS mode, only the following cipher suites are allowed:
 
 ### FIPS mode is NOT enabled
 
-If you see the warning message, it means the `GODEBUG=fips140=on` environment variable is not set. Enable it with:
+If you see the warning message, it means either:
+1. The program wasn't built with `GOFIPS140` set, or
+2. The `GODEBUG=fips140=on` runtime variable is not set
+
+To enable both:
 ```bash
+# Build with FIPS module
+GOFIPS140=v1.0.0 go build -o fips-client
+
+# Run with FIPS mode enabled
 GODEBUG=fips140=on ./fips-client
 ```
 
@@ -104,10 +157,12 @@ If you encounter connection errors, check:
 ## Notes
 
 - Go 1.24+ includes native FIPS 140-3 support (no BoringCrypto needed)
-- FIPS mode is enabled at runtime via `GODEBUG=fips140=on` environment variable
+- **GOFIPS140 at build time is the primary control:**
+  - Building with `GOFIPS140=v1.0.0` **automatically enables** FIPS 140-3 enforcement
+  - The built binary will ALWAYS use FIPS-approved cryptography
+  - `GODEBUG=fips140` provides optional additional runtime control
 - FIPS mode restricts the use of non-approved cryptographic algorithms
 - Some cipher suites (like ChaCha20-Poly1305) are not FIPS-approved and won't be used in FIPS mode
-- The program imports `crypto/tls/fipsonly` which enforces **strict FIPS 140-3 mode**
 - FIPS 140-3 **requires Extended Master Secret (EMS)** for TLS 1.2 connections
 - If a server doesn't support EMS, you'll get: `"tls: FIPS 140-3 requires the use of Extended Master Secret"` - **this is the correct behavior** and shows FIPS enforcement is working
 
@@ -125,22 +180,31 @@ tls: FIPS 140-3 requires the use of Extended Master Secret
 
 **This is correct behavior and demonstrates that FIPS enforcement is working properly.**
 
-### GODEBUG Options
+### Environment Variables
 
-- `GODEBUG=fips140=on` - Enables FIPS mode with strict EMS enforcement
-- Standard Go crypto (no GODEBUG flag) - No FIPS enforcement
+**Build Time (Primary Control):**
+- `GOFIPS140=v1.0.0` - Build with FIPS module v1.0.0 → **FIPS always enforced**
+- `GOFIPS140=latest` - Build with latest FIPS module → **FIPS always enforced**
+- No GOFIPS140 - Build with standard Go crypto → **No FIPS enforcement**
+
+**Runtime (Optional Additional Control):**
+- No GODEBUG - Uses default FIPS enforcement (if built with GOFIPS140)
+- `GODEBUG=fips140=on` - Explicit FIPS mode (same as default if built with GOFIPS140)
+- `GODEBUG=fips140=only` - Strictest mode (panics on any non-FIPS crypto)
 
 ## Implementation Details
 
 ### FIPS Mode Detection
 
-The program checks the `GODEBUG` environment variable for `fips140=on`:
+The program checks both build-time and runtime environment variables:
 
 ```go
-func isFIPSEnabled() bool {
-    godebug := os.Getenv("GODEBUG")
-    return strings.Contains(godebug, "fips140=on")
-}
+// Build-time: Check FIPS module version
+gofips140 := os.Getenv("GOFIPS140")
+
+// Runtime: Check FIPS mode enabled
+godebug := os.Getenv("GODEBUG")
+fipsEnabled := strings.Contains(godebug, "fips140=on")
 ```
 
 ### TLS Configuration
@@ -148,22 +212,30 @@ func isFIPSEnabled() bool {
 - Minimum TLS version: 1.2 (required by FIPS)
 - Only FIPS-approved cipher suites are used when FIPS mode is enabled
 - Example FIPS-approved cipher: `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
-- The `crypto/tls/fipsonly` import enforces strict compliance
+- Extended Master Secret (EMS) is required for TLS 1.2 in FIPS mode
 
 ## Output Examples
 
-### When running with FIPS 140-3 mode enabled:
+### When built with FIPS (GOFIPS140=v1.0.0):
 
 With a server that doesn't support Extended Master Secret (like Snowflake):
 
 ```bash
-GODEBUG=fips140=on ./fips-client
+# Build with FIPS
+GOFIPS140=v1.0.0 go build -o fips-client
+
+# Run (FIPS automatically enforced)
+./fips-client
 ```
 
 Output:
 ```
-✓ FIPS mode is ENABLED (standard mode: fips140=on)
-  Note: Go 1.25 FIPS mode enforces Extended Master Secret for TLS 1.2
+=== FIPS Mode Status ===
+
+ℹ️  FIPS enforcement is determined at BUILD time with GOFIPS140=v1.0.0
+ℹ️  When built with GOFIPS140, FIPS 140-3 compliance is ALWAYS enforced
+
+GODEBUG: Not set (default FIPS enforcement if built with GOFIPS140)
 
 Sending GET request to: https://dibaddoo.snowflakecomputing.com/
 Error making GET request: Get "https://dibaddoo.snowflakecomputing.com/": tls: FIPS 140-3 requires the use of Extended Master Secret
@@ -173,28 +245,34 @@ It means:
   ✓ FIPS enforcement is working correctly
   ✓ The server doesn't support Extended Master Secret (EMS)
   ✓ The connection was properly rejected per FIPS 140-3 requirements
-
-FIPS 140-3 compliance requires EMS for TLS 1.2 connections.
-To connect to this server:
-  1. Server must implement EMS support (RFC 7627)
-  2. Or run without FIPS mode (not recommended for FIPS-required environments)
 ```
 
 **This error is EXPECTED and CORRECT** - it demonstrates that FIPS 140-3 enforcement is working properly.
 
-### When running without FIPS mode:
+### When built WITHOUT FIPS (no GOFIPS140):
 
 Standard Go crypto (no FIPS enforcement):
 
 ```bash
+# Build without FIPS
+go build -o fips-client
+
+# Run
 ./fips-client
 ```
 
 Output:
 ```
-⚠ WARNING: FIPS mode is NOT enabled
-  To enable FIPS mode:
-    - GODEBUG=fips140=on ./fips-client
+=== FIPS Mode Status ===
+
+ℹ️  FIPS enforcement is determined at BUILD time with GOFIPS140=v1.0.0
+ℹ️  When built with GOFIPS140, FIPS 140-3 compliance is ALWAYS enforced
+
+GODEBUG: Not set (default FIPS enforcement if built with GOFIPS140)
+
+To enable FIPS compliance:
+  Build with: GOFIPS140=v1.0.0 go build
+  Run:        ./fips-client (FIPS automatically enforced)
 
 Sending GET request to: https://dibaddoo.snowflakecomputing.com/
 

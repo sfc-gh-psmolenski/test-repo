@@ -10,27 +10,35 @@ import (
 	"strings"
 )
 
-// Note: In Go 1.24+, FIPS mode is controlled by GODEBUG=fips140=on
-// The crypto/tls/fipsonly package is optional and only needed for
-// strictest enforcement. For most use cases, GODEBUG=fips140=only
-// provides equivalent strict FIPS 140-3 compliance.
+// Note: In Go 1.24+, FIPS mode uses two environment variables:
+// - GOFIPS140=v1.0.0 (or =latest): Build-time - selects FIPS module version
+// - GODEBUG=fips140=on: Runtime - enables FIPS mode execution
+// - GODEBUG=fips140=only: Runtime - strict FIPS enforcement (panics on non-FIPS crypto)
 
 func main() {
-	// Check if FIPS mode is enabled
+	// Check runtime FIPS mode control
 	godebug := os.Getenv("GODEBUG")
 	fipsMode := getFIPSMode(godebug)
 
-	switch fipsMode {
-	case "only":
-		fmt.Println("✓ FIPS mode is ENABLED (strict mode: fips140=only)")
-	case "on":
-		fmt.Println("✓ FIPS mode is ENABLED (standard mode: fips140=on)")
-		fmt.Println("  Note: Go 1.25 FIPS mode enforces Extended Master Secret for TLS 1.2")
-	default:
-		fmt.Println("⚠ WARNING: FIPS mode is NOT enabled")
-		fmt.Println("  To enable FIPS mode:")
-		fmt.Println("    - GODEBUG=fips140=on ./fips-client")
+	fmt.Println("=== FIPS Mode Status ===")
+	fmt.Println("")
+	fmt.Println("ℹ️  FIPS enforcement is determined at BUILD time with GOFIPS140=v1.0.0")
+	fmt.Println("ℹ️  When built with GOFIPS140, FIPS 140-3 compliance is ALWAYS enforced")
+	fmt.Println("")
+
+	if fipsMode == "only" {
+		fmt.Println("GODEBUG: fips140=only (strictest mode - panics on non-FIPS crypto)")
+	} else if fipsMode == "on" {
+		fmt.Println("GODEBUG: fips140=on (standard FIPS enforcement)")
+	} else {
+		fmt.Println("GODEBUG: Not set (default FIPS enforcement if built with GOFIPS140)")
 	}
+
+	fmt.Println("")
+	fmt.Println("To enable FIPS compliance:")
+	fmt.Println("  Build with: GOFIPS140=v1.0.0 go build")
+	fmt.Println("  Run:        ./fips-client (FIPS automatically enforced)")
+	fmt.Println()
 
 	// Create a custom HTTP client with TLS configuration
 	// In FIPS mode, only FIPS-approved cipher suites will be used
@@ -169,7 +177,8 @@ func contains(s, substr string) bool {
 }
 
 // Note: In Go 1.24+, FIPS mode uses the native Go Cryptographic Module
-// GODEBUG options:
-//   - fips140=on: Enables FIPS mode with broader compatibility
-//   - fips140=only: Strict FIPS 140-3 enforcement (requires EMS for TLS 1.2)
+// Environment variables:
+//   Build-time: GOFIPS140=v1.0.0 (or =latest) - selects FIPS module version
+//   Runtime:    GODEBUG=fips140=on - enables FIPS mode
+//               GODEBUG=fips140=only - strict enforcement (requires EMS)
 // No need for BoringCrypto or GOEXPERIMENT=boringcrypto
